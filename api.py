@@ -4,11 +4,9 @@ import json
 import logging
 import uuid
 from argparse import ArgumentParser
-from http.server import (
-    BaseHTTPRequestHandler,
-    HTTPServer,
-)
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Callable
+
 import scoring
 
 SALT = "Otus"
@@ -243,7 +241,7 @@ def check_auth(request: MethodRequest) -> bool:
     return digest == request.token
 
 
-def method_handler(request, ctx, settings):
+def method_handler(request, ctx, store):
     body = request["body"]
     method_request = MethodRequest(**body)
     if not method_request.validate():
@@ -251,6 +249,7 @@ def method_handler(request, ctx, settings):
 
     if not check_auth(method_request):
         return {"error": "Forbidden"}, FORBIDDEN
+
     method_name = method_request.method
     arguments = method_request.arguments
 
@@ -258,13 +257,21 @@ def method_handler(request, ctx, settings):
         score_request = OnlineScoreRequest(**arguments)
         if not score_request.validate():
             return score_request.errors, INVALID_REQUEST
-        ctx.update(score_request.context)  # has
+
+        ctx.update(score_request.context)
+
         if method_request.is_admin:
             return {"score": 42}, OK
+
+        birthday_dt = None
+        if score_request.birthday:
+            birthday_dt = datetime.datetime.strptime(score_request.birthday, "%d.%m.%Y")
+
         score = scoring.get_score(
+            store,
             phone=score_request.phone,
             email=score_request.email,
-            birthday=score_request.birthday,
+            birthday=birthday_dt,
             gender=score_request.gender,
             first_name=score_request.first_name,
             last_name=score_request.last_name,
@@ -275,10 +282,12 @@ def method_handler(request, ctx, settings):
         interests_request = ClientsInterestsRequest(**arguments)
         if not interests_request.validate():
             return interests_request.errors, INVALID_REQUEST
+
         ctx.update(interests_request.context)
+
         response = {}
         for client_id in interests_request.client_ids:
-            response[str(client_id)] = scoring.get_interests(cid=str(client_id))
+            response[str(client_id)] = scoring.get_interests(store, cid=str(client_id))
         return response, OK
 
     return {"error": "Unknown method"}, INVALID_REQUEST

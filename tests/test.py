@@ -1,9 +1,11 @@
 import datetime
 import functools
 import hashlib
+import json
 import unittest
 
 import api
+from store import Store
 
 
 def cases(cases):
@@ -12,7 +14,10 @@ def cases(cases):
         def wrapper(*args):
             for c in cases:
                 new_args = args + (c if isinstance(c, tuple) else (c,))
-                f(*new_args)
+                try:
+                    f(*new_args)
+                except AssertionError as e:
+                    raise AssertionError(f"Case failed: {c}") from e
 
         return wrapper
 
@@ -23,11 +28,13 @@ class TestSuite(unittest.TestCase):
     def setUp(self):
         self.context = {}
         self.headers = {}
-        self.settings = {}
+        self.store = Store()
+        for cid in [0, 1, 2, 3]:
+            self.store.set(f"i:{cid}", json.dumps(["books", "hi-tech"]))
 
     def get_response(self, request):
         return api.method_handler(
-            {"body": request, "headers": self.headers}, self.context, self.settings
+            {"body": request, "headers": self.headers}, self.context, self.store
         )
 
     def set_valid_auth(self, request):
@@ -143,7 +150,7 @@ class TestSuite(unittest.TestCase):
     @cases(
         [
             {"phone": "79175002040", "email": "stupnikov@otus.ru"},
-            {"phone": 79175002040, "email": "stupnikov@otus.ru"},
+            {"phone": "79175002040", "email": "stupnikov@otus.ru"},
             {
                 "gender": 1,
                 "birthday": "01.01.2000",
